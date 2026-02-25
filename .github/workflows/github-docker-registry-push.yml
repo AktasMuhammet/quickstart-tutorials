@@ -63,9 +63,49 @@ jobs:
           BRANCH_NAME="docker-versions-update-$(date +%s)"
           git checkout -b "$BRANCH_NAME"
 
-          # Write Docker versions to file
-          echo "- $(docker --version)" > docker-versions.txt
-          echo "- $(docker compose version)" >> docker-versions.txt
+          # Helper: compare two semver strings, return 0 if $1 > $2
+          version_gt() {
+            # Use sort -V to compare versions; if the greater one is $1, it's newer
+            [ "$(printf '%s\n%s' "$1" "$2" | sort -V | tail -n1)" = "$1" ] && [ "$1" != "$2" ]
+          }
+
+          # Save current lines from docker-versions.txt
+          CURRENT_DOCKER_LINE=$(grep "Docker version" docker-versions.txt)
+          CURRENT_COMPOSE_LINE=$(grep "Docker Compose version" docker-versions.txt)
+
+          # Extract semver from current file
+          CURRENT_DOCKER=$(echo "$CURRENT_DOCKER_LINE" | cut -d ' ' -f 4 | cut -d ',' -f 1)
+          CURRENT_COMPOSE=$(echo "$CURRENT_COMPOSE_LINE" | cut -d ' ' -f 5 | tr -d 'v')
+
+          # Get runner versions (full output and semver)
+          RUNNER_DOCKER_FULL="$(docker --version)"
+          RUNNER_COMPOSE_FULL="$(docker compose version)"
+          RUNNER_DOCKER=$(echo "$RUNNER_DOCKER_FULL" | cut -d ' ' -f 3 | cut -d ',' -f 1)
+          RUNNER_COMPOSE=$(echo "$RUNNER_COMPOSE_FULL" | cut -d ' ' -f 4 | tr -d 'v')
+
+          echo "Current: Docker $CURRENT_DOCKER, Compose $CURRENT_COMPOSE"
+          echo "Runner:  Docker $RUNNER_DOCKER, Compose $RUNNER_COMPOSE"
+
+          # Only update if runner version is strictly newer, otherwise keep existing line
+          if version_gt "$RUNNER_DOCKER" "$CURRENT_DOCKER"; then
+            echo "Docker version $RUNNER_DOCKER is newer than $CURRENT_DOCKER, updating"
+            DOCKER_LINE="- $RUNNER_DOCKER_FULL"
+          else
+            echo "Docker version $RUNNER_DOCKER is not newer than $CURRENT_DOCKER, keeping current"
+            DOCKER_LINE="$CURRENT_DOCKER_LINE"
+          fi
+
+          if version_gt "$RUNNER_COMPOSE" "$CURRENT_COMPOSE"; then
+            echo "Docker Compose version $RUNNER_COMPOSE is newer than $CURRENT_COMPOSE, updating"
+            COMPOSE_LINE="- $RUNNER_COMPOSE_FULL"
+          else
+            echo "Docker Compose version $RUNNER_COMPOSE is not newer than $CURRENT_COMPOSE, keeping current"
+            COMPOSE_LINE="$CURRENT_COMPOSE_LINE"
+          fi
+
+          # Write versions to file
+          echo "$DOCKER_LINE" > docker-versions.txt
+          echo "$COMPOSE_LINE" >> docker-versions.txt
 
           # Only add the specific file we want
           git add docker-versions.txt
